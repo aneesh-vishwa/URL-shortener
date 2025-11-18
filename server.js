@@ -1,15 +1,39 @@
-require('dotenv').config();
-const express = require('express');
-const connectDB = require('./config/db');
+const shortid = require('shortid');
+const Url = require('./models/URL');
+const cors = require('cors');
 
-const app = express();
-connectDB();
+app.use(cors());
 
-app.use(express.json());
+// helper
+const getBaseUrl = (req) => {
+  if (process.env.BASE_URL) return process.env.BASE_URL;
+  return `${req.protocol}://${req.get('host')}`;
+};
 
-app.get('/', (req, res) => {
-  res.send('URL Shortener API');
+app.post('/api/short', async (req, res) => {
+  try {
+    const { longUrl } = req.body;
+
+    if (!longUrl || typeof longUrl !== 'string') {
+      return res.status(400).json({ error: 'Please provide a valid URL' });
+    }
+
+    const baseUrl = getBaseUrl(req);
+
+    let url = await Url.findOne({ longUrl });
+    if (url) {
+      return res.json(url);
+    }
+
+    const urlCode = shortid.generate();
+    const shortUrl = `${baseUrl}/${urlCode}`;
+
+    url = new Url({ urlCode, longUrl, shortUrl });
+    await url.save();
+
+    res.status(201).json(url);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
