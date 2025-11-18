@@ -10,6 +10,22 @@ const getBaseUrl = (req) => {
   return `${req.protocol}://${req.get('host')}`;
 };
 
+
+app.get('/:code', async (req, res) => {
+  try {
+    const url = await Url.findOne({ urlCode: req.params.code });
+
+    if (url) {
+      return res.redirect(url.longUrl);
+    }
+
+    return res.status(404).json({ error: 'No URL found for this code' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/api/short', async (req, res) => {
   try {
     const { longUrl } = req.body;
@@ -37,3 +53,5 @@ app.post('/api/short', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+
