@@ -1,57 +1,93 @@
-const shortid = require('shortid');
-const Url = require('./models/URL');
-const cors = require('cors');
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
+const express = require('express');
+const app = express();
+const URL = require('./models/URL');
+const shortid = require('shortid');
+const connectDB = require('./config/db');
+const cors = require('cors');
+const path = require('path');
+
+// Database Connect
+connectDB();
+
+// Body Parser Setup
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ extended: true }));
+app.set('view engine', 'ejs');
+
+// Security
 app.use(cors());
 
-// helper
-const getBaseUrl = (req) => {
-  if (process.env.BASE_URL) return process.env.BASE_URL;
-  return `${req.protocol}://${req.get('host')}`;
-};
+// Middleware Setup
+app.use((req, res, next) => {
+  req.baseUrl = `${req.protocol}://${req.get('host')}`;
+  next();
+});
 
-
-app.get('/:code', async (req, res) => {
+// Create Short URL
+app.post('/api/v2/shorten', async (req, res) => {
   try {
-    const url = await Url.findOne({ urlCode: req.params.code });
-
+    const { longURL } = req.body;
+    console.log(longURL);
+    let url = await URL.findOne({ longURL });
     if (url) {
-      return res.redirect(url.longUrl);
+      return res.status(200).json({
+        ...url._doc,
+        shortURL: `${req.baseUrl}/${url.shortID}`,
+      });
     }
-
-    return res.status(404).json({ error: 'No URL found for this code' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    url = await URL.create({
+      longURL,
+      shortID: shortid.generate(),
+    });
+    res.status(200).json({
+      ...url._doc,
+      shortURL: `${req.baseUrl}/${url.shortID}`,
+    });
+  } catch (e) {
+    console.log(e);
+    return res.status(500).json({
+      msg: 'Server Error',
+    });
   }
 });
 
-app.post('/api/short', async (req, res) => {
+// Clicks on ShortURLs
+app.get('/:shortID', async (req, res) => {
   try {
-    const { longUrl } = req.body;
-
-    if (!longUrl || typeof longUrl !== 'string') {
-      return res.status(400).json({ error: 'Please provide a valid URL' });
+    const { shortID } = req.params;
+    let url = await URL.findOne({ shortID });
+    if (!url) {
+      return res.status(404).json({
+        msg: 'No valid URLs found.',
+      });
     }
-
-    const baseUrl = getBaseUrl(req);
-
-    let url = await Url.findOne({ longUrl });
-    if (url) {
-      return res.json(url);
-    }
-
-    const urlCode = shortid.generate();
-    const shortUrl = `${baseUrl}/${urlCode}`;
-
-    url = new Url({ urlCode, longUrl, shortUrl });
+    url.clicks++;
     await url.save();
-
-    res.status(201).json(url);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    res.redirect(url.longURL);
+  } catch (e) {
+    console.log(e);
+    res.status(500).json({
+      msg: 'Server Error',
+    });
   }
 });
 
+// Serve static  assets in Production
+if (process.env.NODE_ENV === 'production') {
+  // set Static Folder
+  app.use(express.static('client/build'));
 
+  app.get('*', (req, res) =>
+    res.sendFile(path.resolve(__dirname, 'client', 'build', 'index.html'))
+  );
+}
+
+// Server PORT Setup
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server started on port ${PORT}`);
+});
